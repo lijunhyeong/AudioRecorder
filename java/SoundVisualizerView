@@ -1,0 +1,108 @@
+import android.content.Context
+import android.graphics.Canvas
+import android.graphics.Paint
+import android.util.AttributeSet
+import android.view.View
+
+class SoundVisualizerView(
+    context: Context,
+    attrs: AttributeSet? = null
+) : View(context, attrs) {
+
+    var onRequestCurrentAmplitude: (()->Int)?=null
+
+    // 진폭 커스텀
+    private val amplitudePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {         // 곡선이 이뻐짐
+        color = context.getColor(R.color.purple_500)         // 색상
+        strokeWidth = LINE_WIDTH                // 너비
+        strokeCap = Paint.Cap.ROUND             // 양끝 모양
+    }
+
+    // 그려야할 사이즈
+    private var drawingWidth: Int = 0
+    private var drawingHeight: Int = 0
+
+    private var drawingAmplitudes: List<Int> = emptyList()
+    private var isReplaying:Boolean = false
+    private var replayingPosition: Int = 0
+
+    // 반복해서 자신의 호출해서 실행시키도록 요청한다.
+    private val visualizeRepeatAction:Runnable = object :Runnable{
+        override fun run() {
+            if (!isReplaying){
+                val currentAmplitude = onRequestCurrentAmplitude?.invoke()?:0
+                drawingAmplitudes = listOf(currentAmplitude) + drawingAmplitudes
+            }else{
+                replayingPosition++         // drawing 할 개수를 늘려줌
+            }
+
+            invalidate()        // 뷰 갱신을 위한 메소드
+            handler?.postDelayed(this, ACTION_INTERVAL)     // Amplitude, Draw 요청
+        }
+    }
+
+    // 새로운 너비, 새로운 높이, 옛날 너비, 옛날 높이
+    override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
+        super.onSizeChanged(w, h, oldw, oldh)
+        drawingHeight = h
+        drawingWidth = w
+    }
+
+    override fun onDraw(canvas: Canvas?) {
+        super.onDraw(canvas)
+
+        canvas ?: return        // null이면 return
+
+        val centerY = drawingHeight /2f
+        var offsetX = drawingWidth.toFloat()      // 진폭 방향 오른쪽에서 왼쪽으로
+
+        drawingAmplitudes
+            .let { amplitudes ->
+                if (isReplaying){
+                    amplitudes.takeLast(replayingPosition)
+                }else{
+                    amplitudes
+                }
+            }
+            .forEach{amplitude ->
+            val lineLength = amplitude / MAX_AMPLITUDE*drawingHeight*0.8F
+
+            offsetX -= LINE_SPACE
+            // 녹음이 길어서 진폭을 채워나가다가 화면을 벗어나게 되면 for문을 나온다.
+            if (offsetX<0) return@forEach
+
+            // 진폭의 높이
+            canvas.drawLine(
+                offsetX,
+                centerY-lineLength/2F,
+                offsetX,
+                centerY + lineLength/2F,
+                amplitudePaint
+            )
+        }
+    }
+
+    fun startVisualizing(isReplaying:Boolean){
+        this.isReplaying = isReplaying
+        handler?.post(visualizeRepeatAction)
+    }
+
+    fun stopVisualizing(){
+        replayingPosition = 0
+        handler.removeCallbacks(visualizeRepeatAction)
+    }
+
+    fun clearVisualization(){
+        drawingAmplitudes = emptyList()
+        invalidate()
+    }
+
+    // 진폭의 너비, 진폭간의 간격
+    companion object {
+        private const val LINE_WIDTH = 10F
+        private const val LINE_SPACE = 15F
+        private const val MAX_AMPLITUDE = Short.MAX_VALUE.toFloat()   // 최대 크기, float를 함으로써 0이 되는 것을 방지
+        private const val ACTION_INTERVAL = 20L
+    }
+
+}
